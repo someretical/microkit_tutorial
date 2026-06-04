@@ -1,3 +1,5 @@
+# bear -- make part4
+
 # If you would like to choose a different path to the SDK, you can pass it as an
 # argument.
 ifndef MICROKIT_SDK
