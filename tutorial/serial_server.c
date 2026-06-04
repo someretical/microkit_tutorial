@@ -16,6 +16,11 @@ uintptr_t uart_base_vaddr;
 #define REG_PTR(base, offset) ((volatile uint32_t *)((base) + (offset)))
 
 #define RECEIVER_CHANNEL_ID 1
+#define SENDER_CHANNEL_ID 2
+#define UART_CHANNEL_ID 0
+
+char *client_input_buffer;
+char *serial_server_output_buffer;
 
 void uart_init() { *REG_PTR(uart_base_vaddr, UARTIMSC) = 0x50; }
 
@@ -70,8 +75,19 @@ void init(void) {
 }
 
 void notified(microkit_channel channel) {
-  int c = uart_get_char();
-  microkit_notify(RECEIVER_CHANNEL_ID);
-  uart_handle_irq();
-  microkit_irq_ack(channel);
+  switch (channel) {
+  case RECEIVER_CHANNEL_ID: {
+    uart_put_char(*serial_server_output_buffer);
+    break;
+  }
+  case UART_CHANNEL_ID: {
+    *client_input_buffer = uart_get_char();
+    uart_handle_irq();
+    microkit_irq_ack(channel);
+    microkit_notify(RECEIVER_CHANNEL_ID);
+
+    microkit_dbg_puts("got char1111\n");
+    break;
+  }
+  }
 }

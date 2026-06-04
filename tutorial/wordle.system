@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <system>
     <memory_region name="uart" size="0x1000" phys_addr="0x9000000" />
-
-    <memory_region name="user_input" size="0x1000" />
-    <memory_region name="server_output" size="0x1000" />
+    <memory_region name="client_input_buffer" size="0x1000" />
+    <memory_region name="serial_server_output_buffer" size="0x1000" />
 
     <protection_domain name="serial_server" priority="254">
         <program_image path="serial_server.elf" />
@@ -11,21 +10,80 @@
         <map mr="uart" vaddr="0x4000000" perms="rw" cached="false"
             setvar_vaddr="uart_base_vaddr" />
 
-        <map mr="user_input" vaddr="0x6000000" perms="rw" setvar_vaddr="user_input_buffer"/>
-        <map mr="server_output" vaddr="0x6001000" perms="rw" setvar_vaddr="server_output_buffer"/>
+        <map mr="client_input_buffer" vaddr="0x6000000" perms="rw" setvar_vaddr="client_input_buffer"/>
+        <map mr="serial_server_output_buffer" vaddr="0x6001000" perms="rw" setvar_vaddr="serial_server_output_buffer"/>
 
         <irq id="0" irq="33" />
     </protection_domain>
 
-    <protection_domain name="client" priority="253">
+    <protection_domain name="client" priority="200">
         <program_image path="client.elf" />
+        <map mr="client_input_buffer" vaddr="0x6000000" perms="rw" setvar_vaddr="client_input_buffer"/>
+        <map mr="serial_server_output_buffer" vaddr="0x6001000" perms="rw" setvar_vaddr="serial_server_output_buffer"/>
+    </protection_domain>
 
-        <map mr="user_input" vaddr="0x6000000" perms="rw" setvar_vaddr="user_input_buffer"/>
-        <map mr="server_output" vaddr="0x6001000" perms="rw" setvar_vaddr="server_output_buffer"/>
+    <protection_domain name="wordle_server" priority="252">
+        <program_image path="wordle_server.elf" />
+        <map mr="client_input_buffer" vaddr="0x6000000" perms="rw" setvar_vaddr="client_input_buffer"/>
+        <map mr="serial_server_output_buffer" vaddr="0x6001000" perms="rw" setvar_vaddr="serial_server_output_buffer"/>
     </protection_domain>
 
     <channel>
         <end pd="serial_server" id="1" />
         <end pd="client" id="2" />
     </channel>
+
+    <channel>
+        <end pd="client" id="3" pp="true" />
+        <end pd="wordle_server" id="4" />
+    </channel>
+
+    <channel>
+        <!-- The VMM code expects the channel ID to be 1. -->
+        <end pd="vmm" id="1" pp="true" />
+        <end pd="wordle_server" id="2" />
+    </channel>
+
+    <!--
+        This is what the virtual machine will use as its "RAM".
+        Remember it does not know it is a VM and so it will expect a
+        block of contigious memory as RAM.
+    -->
+    <memory_region name="guest_ram" size="0x10000000" page_size="0x200_000"
+        phys_addr="0x40000000" />
+    <!-- Create a memory region for the ethernet device -->
+    <memory_region name="ethernet" size="0x1000" phys_addr="0xa003000" />
+    <!--
+        Create a memory region for the GIC CPU interface. This is a device
+        that is virtualised at the hardware-level, unlike other parts
+        of the GIC.
+    -->
+    <memory_region name="gic_vcpu" size="0x1000" phys_addr="0x8040000" />
+
+    <!-- Create a VMM protection domain -->
+    <protection_domain name="vmm" priority="101">
+        <program_image path="vmm.elf" />
+        <!--
+            Map in the virtual machine's RAM region as the VMM needs
+            access to it as well for starting and setting up the VM.
+        -->
+        <map mr="guest_ram" vaddr="0x40000000" perms="rw"
+            setvar_vaddr="guest_ram_vaddr" />
+        <!--
+            Create the virtual machine, the vCPU `id` is used for the
+            VMM to refer to the VM. Similar to channels and IRQs.
+        -->
+        <virtual_machine name="linux" priority="100">
+            <vcpu id="0" />
+            <map mr="guest_ram" vaddr="0x40000000" perms="rwx" />
+            <map mr="ethernet" vaddr="0xa003000" perms="rw" cached="false" />
+            <map mr="uart" vaddr="0x9000000" perms="rw" cached="false" />
+            <map mr="gic_vcpu" vaddr="0x8010000" perms="rw" cached="false" />
+        </virtual_machine>
+        <!--
+            We want the VMM to receive the ethernet interrupts, which it
+            will then deliver to the VM.
+        -->
+        <irq irq="79" id="2" trigger="edge" />
+    </protection_domain>
 </system>

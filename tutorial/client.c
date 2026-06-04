@@ -12,7 +12,11 @@
 
 #define INVALID_CHAR (-1)
 
+#define RECEIVER_CHANNEL_ID 1
 #define SENDER_CHANNEL_ID 2
+
+char *client_input_buffer;
+char *serial_server_output_buffer;
 
 struct wordle_char {
   int ch;
@@ -27,14 +31,23 @@ static int curr_row = 0;
 static int curr_letter = 0;
 
 void wordle_server_send() {
-  // Implement this function to send the word over PPC
-  // After doing the PPC, the Wordle server should have updated
-  // the message-registers containing the state of each character.
-  // Look at the message registers and update the `table` accordingly.
+  microkit_msginfo msginfo = microkit_msginfo_new(0, WORD_LENGTH);
+  for (int i = 0; i < WORD_LENGTH; i++) {
+    microkit_mr_set(i, table[curr_row][i].ch);
+  }
+  microkit_ppcall(3, msginfo);
+
+  for (int i = 0; i < WORD_LENGTH; i++) {
+    table[curr_row][i].state = microkit_mr_get(i);
+  }
 }
 
 void serial_send(char *str) {
-  // Implement this function to get the serial server to print the string.
+  while (*str) {
+    *serial_server_output_buffer = *str;
+    microkit_notify(SENDER_CHANNEL_ID);
+    str++;
+  }
 }
 
 // This function prints a CLI Wordle using pretty colours for what characters
@@ -132,7 +145,11 @@ void init(void) {
 
 void notified(microkit_channel channel) {
   switch (channel) {
-  case SENDER_CHANNEL_ID:
-    microkit_dbg_puts("Received message from sender!\n");
+  case SENDER_CHANNEL_ID: {
+    microkit_dbg_puts("received char2222\n");
+    add_char_to_table(*client_input_buffer);
+    print_table(true);
+    break;
+  }
   }
 }
